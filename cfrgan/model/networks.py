@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from torchvision.models import vgg16, vgg19, resnet18
-from model.layers import *
+from cfrgan.model.layers import *
 
 
 class VGG19(torch.nn.Module):

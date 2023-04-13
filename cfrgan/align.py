@@ -1,8 +1,8 @@
 import cv2, os
 import numpy as np
 import argparse
-from mmRegressor.preprocess_img import Preprocess
-from mmRegressor.load_data import BFM
+from cfrgan.mmRegressor.preprocess_img import Preprocess
+from cfrgan.mmRegressor.load_data import BFM
 from PIL import Image
 
 if __name__=='__main__':

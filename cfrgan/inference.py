@@ -7,9 +7,9 @@ import cv2
 import torch
 import argparse
 
-from generate_pairs import Estimator3D
+from cfrgan.generate_pairs import Estimator3D
 
-from model.networks import CFRNet
+from cfrgan.model.networks import CFRNet
 from torchvision.transforms import ToTensor
 
 

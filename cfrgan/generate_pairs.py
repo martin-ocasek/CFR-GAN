@@ -4,10 +4,10 @@ from ctypes import ArgumentError
 import os ; import sys 
 os.chdir( os.path.split( os.path.realpath( sys.argv[0] ) )[0] ) 
 
-from mmRegressor.network.resnet50_task import *
-from mmRegressor.preprocess_img import Preprocess
-from mmRegressor.load_data import *
-from mmRegressor.reconstruct_mesh import Reconstruction, Compute_rotation_matrix, _need_const, Projection_layer
+from cfrgan.mmRegressor.network.resnet50_task import *
+from cfrgan.mmRegressor.preprocess_img import Preprocess
+from cfrgan.mmRegressor.load_data import *
+from cfrgan.mmRegressor.reconstruct_mesh import Reconstruction, Compute_rotation_matrix, _need_const, Projection_layer
 
 import torch
 import numpy as np
@@ -26,7 +26,7 @@ from pytorch3d.renderer import (
     MeshRenderer, MeshRasterizer
 )
 from tqdm import tqdm
-from tools.ops import erosion, SCDiffer, dilation, blur
+from cfrgan.tools.ops import erosion, SCDiffer, dilation, blur
 
 # Retina Face
 if os.path.exists('Pytorch_Retinaface'):
@@ -473,8 +473,9 @@ class Estimator3D(object):
 
         return rotated, guidance
     
-if __name__=='__main__':
-    from faceParsing.model import BiSeNet
+
+def main():
+    from cfrgan.faceParsing.model import BiSeNet
     # params
     batch_size = 2
     cuda_id = 0
@@ -514,3 +515,6 @@ if __name__=='__main__':
             cv2.imwrite(os.path.join(save_path,os.path.basename(img_list[i+k])[:-4]+'_occ.jpg'), occ_mask[k])
             cv2.imwrite(os.path.join(save_path,os.path.basename(img_list[i+k])[:-4]+'_rot.jpg'), cv2.cvtColor(rot[k], cv2.COLOR_RGB2BGR))
             cv2.imwrite(os.path.join(save_path,os.path.basename(img_list[i+k])[:-4]+'_gui.jpg'), cv2.cvtColor(gui[k], cv2.COLOR_RGB2BGR))
+            
+if __name__=='__main__':
+    main()

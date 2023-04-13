@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from torchvision.models import resnet50
-from model.networks import VGG19
+from cfrgan.model.networks import VGG19
 # from utils import load_state_dict
 from torch.autograd import Variable
 
