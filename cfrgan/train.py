@@ -3,6 +3,7 @@ import os, random, sys
 import time, warnings
 import PIL
 
+import mlflow
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -80,6 +81,9 @@ parser.add_argument('--valid_data_path', default=None, required=True, type=str, 
 parser.add_argument('--train_data_list', default=None, required=True, type=str, help="Train image list path")
 parser.add_argument('--valid_data_list', default=None, required=True, type=str, help="Valid image list path")
 
+parser.add_argument('--dataset', default=None, required=True, type=str, help="Name of the dataset")
+parser.add_argument('--mlflow_tracking_url', default=None, required=True, type=str, help="MLFlow tracking url")
+
 logger = CFRLogger('logs')
 
 def main():
@@ -116,8 +120,36 @@ def main():
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
 
-
 def main_worker(gpu, ngpus_per_node, args):
+
+    if args.distributed:
+        if args.dist_url == "env://" and args.rank == -1:
+            args.rank = int(os.environ["RANK"])
+        if args.multiprocessing_distributed:
+            # For multiprocessing distributed training, rank needs to be the
+            # global rank among all the processes
+            args.rank = args.rank * ngpus_per_node + gpu
+        print('rank', args.rank)
+        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
+                                world_size=args.world_size, rank=args.rank)
+
+
+    if torch.distributed.get_rank() == 0:
+        experiment_name = f"CFR:{args.dataset}"
+
+        mlflow.set_experiment(experiment_name)
+        mlflow.set_tracking_uri(args.mlflow_tracking_url)
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        with mlflow.start_run(experiment_id=experiment.experiment_id, run_id="") as run:
+
+            for key in args.__dict__:
+                mlflow.log_param(key, args.__dict__[key])
+            main_work(gpu, ngpus_per_node, args)
+    else:
+        main_work(gpu, ngpus_per_node, args)
+
+
+def main_work(gpu, ngpus_per_node, args):
     args.gpu = gpu
 
     if args.gpu is not None:
@@ -236,7 +268,7 @@ def main_worker(gpu, ngpus_per_node, args):
         # evaluate on validation set
         if torch.distributed.get_rank() == 0:
             # save checkpoint
-            save_checkpoint({
+            ckp = {
                 'epoch': epoch,
                 'G_state_dict': nets['G'].state_dict(),
                 'D_state_dict': nets['D'].state_dict(),
@@ -244,8 +276,11 @@ def main_worker(gpu, ngpus_per_node, args):
                 'D_optimizer': optimizers['D'].state_dict(),
                 'G_lr' : schedulers['G'].get_last_lr(),
                 'D_lr' : schedulers['D'].get_last_lr()
-            }, args.checkpoint_path, epoch, len(train_loader)*(epoch+1))
+            }
 
+            save_checkpoint(ckp, args.checkpoint_path, epoch, len(train_loader)*(epoch+1))
+            mlflow.pytorch.log_state_dict(ckp, artifact_path=f'checkpoint/ckp-{epoch}/')
+            mlflow.pytorch.log_state_dict(nets['G'].state_dict(), artifact_path=f'G/G-{epoch}/')
             torch.save(nets['G'].state_dict(), args.checkpoint_path + '/CFRNet_G_ep{}.pth'.format(epoch+1))
 
 def train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, epoch, args):
@@ -307,6 +342,11 @@ def train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, 
         # Total D loss
         loss_D = criterions['WDIV'](real_validity, img, fake_validity, output)
 
+        total_iter = i+1+epoch*len(train_loader)
+
+        if torch.distributed.get_rank() == 0:
+            mlflow.log_metrics({"loss_D": loss_D.item()}, step=total_iter)
+
         loss_D.backward()
         optimizers['D'].step()
 
@@ -355,6 +395,10 @@ def train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, 
             loss_G.backward(retain_graph=False)
             optimizers['G'].step()
 
+            if torch.distributed.get_rank() == 0:
+                mlflow.log_metrics({"loss_GAN": loss_GAN.item(),
+                                    "loss_occ_mask": loss_occ_mask.item(), "loss_perceptual": loss_per.item(),
+                                    "loss_rec": loss_rec.item(), "loss_id": loss_id.item()}, step=total_iter)
             # --------------
             #  Log Progress
             # --------------
@@ -378,7 +422,7 @@ def train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, 
                 if i % 2 == 0:
                     sys.stdout.write("\r[Epoch %d/%d] [Batch %d/%d]" % (epoch, args.epochs, i, len(train_loader)))
                     logger.log_training(loss_D.item(), loss_GAN.item(), loss_occ_mask.item(), loss_per.item(), loss_rec.item(), loss_id.item(), total_iter)
-                
+                    
                 schedulers['G'].step()
 
         if torch.distributed.get_rank() == 0: 
@@ -386,7 +430,7 @@ def train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, 
 
             if i!=0 and i % args.check_iter == 0:
                 # save checkpoint
-                save_checkpoint({
+                ckp = {
                     'epoch': epoch,
                     'G_state_dict': nets['G'].state_dict(),
                     'D_state_dict': nets['D'].state_dict(),
@@ -394,8 +438,10 @@ def train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, 
                     'D_optimizer': optimizers['D'].state_dict(),
                     'G_lr' : schedulers['G'].get_last_lr(),
                     'D_lr' : schedulers['D'].get_last_lr()
-                }, args.checkpoint_path, epoch, len(train_loader)*(epoch+1))
-            
+                }
+                save_checkpoint(ckp, args.checkpoint_path, epoch, len(train_loader)*(epoch+1))
+                mlflow.pytorch.log_state_dict(ckp, artifact_path=f'checkpoint/ckp-{epoch}/',f=f"{i}.pth")
+
             if (i+1) % args.valid_iter == 0:
                 # test log
                 try:
