@@ -2,6 +2,7 @@ import argparse
 import os, random, sys
 import time, warnings
 import PIL
+import logging
 
 import pickle
 import mlflow
@@ -138,8 +139,8 @@ class CFRTrain:
 
 
       if torch.distributed.get_rank() == 0:
-          experiment_name = f"CFR:{args.dataset}"
-
+          experiment_name = f"CFR"
+          
           mlflow.set_experiment(experiment_name)
           mlflow.set_tracking_uri(args.mlflow_tracking_url)
           experiment = mlflow.get_experiment_by_name(experiment_name)
@@ -157,17 +158,6 @@ class CFRTrain:
 
       if args.gpu is not None:
           print("Use GPU: {} for training".format(args.gpu))
-
-      if args.distributed:
-          if args.dist_url == "env://" and args.rank == -1:
-              args.rank = int(os.environ["RANK"])
-          if args.multiprocessing_distributed:
-              # For multiprocessing distributed training, rank needs to be the
-              # global rank among all the processes
-              args.rank = args.rank * ngpus_per_node + gpu
-          print('rank', args.rank)
-          dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                  world_size=args.world_size, rank=args.rank)
 
       # create model
       face_encoder = IR_SE_50([112,112])
@@ -266,7 +256,7 @@ class CFRTrain:
               train_sampler.set_epoch(epoch)
 
           # train for one epoch
-          train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, epoch, args)
+          self.train(train_loader, valid_loader, nets, criterions, optimizers, schedulers, epoch, args)
 
           # evaluate on validation set
           if torch.distributed.get_rank() == 0:
@@ -490,11 +480,14 @@ class CFRTrain:
   
   def mlflow_log_state_dict(self, state_dict, artifact_path, f=None):
       try:
-          mlflow.pytorch.log_state_dict(state_dict, artifact_path, f)
+          if f is not None :  
+            mlflow.pytorch.log_state_dict(state_dict, artifact_path, f=f)
+          else:
+            mlflow.pytorch.log_state_dict(state_dict, artifact_path)
       except:
-          print("Failed to store state dict in mlflow, will serialize it locally")
-          with open(int(time.time()) + ".pickle", "wb") as outfile:
-            pickle.dump({state_dict: state_dict, artifact_path: artifact_path, f: f}, outfile)
+          logging.exception("Failed to store state dict in mlflow, will serialize it locally")
+          with open(str(int(time.time())) + ".pickle", "wb") as outfile:
+            pickle.dump([state_dict, artifact_path, f], outfile)
 
 
 if __name__=='__main__':
