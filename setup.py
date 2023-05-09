@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="cfrgan",
-    version="1.0.4",
+    version="1.0.5",
     author="",
     author_email="",
     description="CFR-GAN package",
